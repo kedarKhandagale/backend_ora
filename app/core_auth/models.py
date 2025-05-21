@@ -1,5 +1,17 @@
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager, Group, Permission
 from django.db import models
+from django.conf import settings
+
+
+
+class RoleType(models.Model):
+    role_name = models.CharField(max_length=100)
+    role_tag = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.role_name
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -32,7 +44,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
     is_verified = models.BooleanField(default=False)
-
+ 
     # Override groups and user_permissions with unique related_names
     groups = models.ManyToManyField(
         Group,
@@ -76,3 +88,27 @@ class User(AbstractBaseUser, PermissionsMixin):
             "updated_date": self.formatted_updated_date,
             "is_verified": self.is_verified,
         }
+
+
+class UserActiveToken(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    token = models.TextField()
+    created_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Active token for {self.user.email}"
+
+
+
+class UserRoleMapping(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="user_roles")
+    role = models.ForeignKey(RoleType, on_delete=models.CASCADE, related_name="role_users")
+
+    class Meta:
+        unique_together = ("user", "role")  # prevent duplicate mappings
+
+    def __str__(self):
+        return f"{self.user.email} -> {self.role.role_name}"

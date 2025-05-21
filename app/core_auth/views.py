@@ -3,10 +3,12 @@ from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import GetAllUserSerializer, LoginSerializer
+from .serializers import GetAllUserSerializer, LoginSerializer, UserRegisterSerializer, UserUpdateSerializer
 from django.contrib.auth import get_user_model
 from rest_framework.pagination import PageNumberPagination
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
+from core_auth.custom_authentication import CustomTokenAuthentication
+from .models import UserActiveToken
 
 User = get_user_model()
 
@@ -14,13 +16,25 @@ User = get_user_model()
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
 
-    refresh["email"] = user.email
-    refresh["first_name"] = user.first_name
-    refresh["last_name"] = user.last_name
+    # Save or update the latest token for the user
+    UserActiveToken.objects.update_or_create(
+        user=user,
+        defaults={'token': access_token}
+    )
+
+    # Fetch active role names for the user
+    role_names = list(
+        user.user_roles.filter(role__is_active=True).values_list('role__role_name', flat=True)
+    )
 
     return {
-        'token': str(refresh.access_token),
+        'token': access_token,
+        'role_names': role_names,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
     }
 
 class LoginView(APIView):
@@ -43,8 +57,35 @@ class LoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class UserRegisterView(APIView):
+    authentication_classes = [CustomTokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = UserRegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({"message": "User registered successfully", "user": serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserUpdateView(APIView):
+    authentication_classes = [CustomTokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, user_id):
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({'detail': 'User not found'}, status=404)
+        serializer = UserUpdateSerializer(user, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "User updated successfully", "user": serializer.data})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UserListAPIView(APIView):
+    authentication_classes = [CustomTokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
@@ -80,6 +121,7 @@ class UserListAPIView(APIView):
 
 
 class UserDetailAPIView(APIView):
+    authentication_classes = [CustomTokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, user_id):
