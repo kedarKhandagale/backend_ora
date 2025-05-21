@@ -10,8 +10,8 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 from core_auth.custom_authentication import CustomTokenAuthentication
 from .models import UserActiveToken
 
-User = get_user_model()
 
+User = get_user_model()
 
 
 def get_tokens_for_user(user):
